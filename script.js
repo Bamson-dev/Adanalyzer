@@ -79,7 +79,7 @@ analyzeDemoBtn.addEventListener('click', async () => {
   analyzeDemoBtn.innerHTML = '<span class="spinner"></span> <span>Analyzing...</span>';
   
   try {
-    const response = await fetch('/api/analyze', {
+    const response = await fetch('https://adanalyzer-api.bamzonline01.workers.dev/api/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adCopy: demoText })
@@ -139,7 +139,7 @@ form.addEventListener('submit', async (e) => {
   results.style.display = 'none';
   
   try {
-    const response = await fetch('/api/analyze', {
+    const response = await fetch('https://adanalyzer-api.bamzonline01.workers.dev/api/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adCopy, creative })
@@ -295,7 +295,7 @@ closeResultsBtn.addEventListener('click', () => {
 
 // Track events
 function trackEvent(eventName) {
-  fetch('/api/track', {
+  fetch('https://adanalyzer-api.bamzonline01.workers.dev/api/track', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ event: eventName })
