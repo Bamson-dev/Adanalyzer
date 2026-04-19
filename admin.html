@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AdAnalyzer Admin</title>
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+  <main class="wrap">
+    <section id="loginCard" class="card">
+      <h1>AdAnalyzer Admin</h1>
+      <p>Sign in to view analytics.</p>
+      <form id="loginForm">
+        <label for="email">Email</label>
+        <input id="email" type="email" required>
+        <label for="password">Password</label>
+        <input id="password" type="password" required>
+        <button type="submit">Sign In</button>
+      </form>
+      <p id="loginError" class="error"></p>
+    </section>
+
+    <section id="dashboard" class="card hidden">
+      <header class="top">
+        <h2>Analytics Dashboard</h2>
+        <button id="logoutBtn">Logout</button>
+      </header>
+      <div class="grid" id="statsGrid"></div>
+    </section>
+  </main>
+
+  <script src="admin.js"></script>
+</body>
+</html>
