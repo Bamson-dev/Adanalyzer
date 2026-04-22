@@ -10,7 +10,7 @@ const errorText = document.getElementById('errorText');
 const usageCount = document.getElementById('usageCount');
 const usageTextEl = document.getElementById('usageText');
 const shareBtn = document.getElementById('shareBtn');
-const whatsappBtn = document.getElementById('whatsappBtn');
+const emailShareBtn = document.getElementById('emailShareBtn');
 const copyLinkBtn = document.getElementById('copyLinkBtn');
 const analyzeAnotherBtn = document.getElementById('analyzeAnotherBtn');
 const closeResultsBtn = document.getElementById('closeResults');
@@ -19,6 +19,51 @@ const closeResultsBtn = document.getElementById('closeResults');
 const analyzeDemoBtn = document.getElementById('analyzeDemoBtn');
 const demoAdCopy = document.getElementById('demoAdCopy');
 const demoResults = document.getElementById('demoResults');
+
+const ANALYZE_API = 'https://adanalyzer-api.bamzonline01.workers.dev/api/analyze';
+
+const SITE_SHARE_URL = 'https://adanalyzer-site.bamzonline01.workers.dev';
+
+const DEFAULT_SHARE_MESSAGE = `I just used AdAnalyzer to check my Facebook ad before spending. It caught CPM killers that would have cost me N50,000+. This is a Free tool built for Nigerian businesses: You can check it out ${SITE_SHARE_URL}`;
+const ANALYZE_FETCH_TIMEOUT_MS = 120000;
+
+const ANALYZE_STATUS_MESSAGES = [
+  'Analyzing…',
+  'Reviewing hook & CPM signals…',
+  'Applying Nigerian market lens…',
+  'Checking policy & engagement…',
+  'Finalizing your report…',
+];
+
+let analyzeStatusTimer = null;
+let demoStatusTimer = null;
+
+function startAnalyzeStatusRotation() {
+  const label = document.getElementById('analyzeLoadingLabel');
+  if (!label) return;
+  let i = 0;
+  analyzeStatusTimer = setInterval(() => {
+    i = (i + 1) % ANALYZE_STATUS_MESSAGES.length;
+    label.textContent = ANALYZE_STATUS_MESSAGES[i];
+  }, 8000);
+}
+
+function stopAnalyzeStatusRotation() {
+  if (analyzeStatusTimer) {
+    clearInterval(analyzeStatusTimer);
+    analyzeStatusTimer = null;
+  }
+  const label = document.getElementById('analyzeLoadingLabel');
+  if (label) label.textContent = 'Analyzing…';
+}
+
+function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ANALYZE_FETCH_TIMEOUT_MS);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => {
+    clearTimeout(timeoutId);
+  });
+}
 
 // Rate limiting
 function checkDailyLimit() {
@@ -70,16 +115,24 @@ analyzeDemoBtn.addEventListener('click', async () => {
   // Check rate limit
   const { remaining } = checkDailyLimit();
   if (remaining === 0) {
-    showError('Daily limit reached (5 analyses). Try again tomorrow or contact us at 09067285890 for unlimited access.');
+    showError('Daily limit reached (5 analyses). Try again tomorrow or email Bamzonline01@gmail.com for unlimited access.');
     return;
   }
   
   // Set loading
   analyzeDemoBtn.disabled = true;
-  analyzeDemoBtn.innerHTML = '<span class="spinner"></span> <span>Analyzing...</span>';
+  analyzeDemoBtn.innerHTML =
+    '<span class="spinner"></span> <span id="demoLoadingLabel">Analyzing…</span>';
+  let demoLabelIndex = 0;
+  demoStatusTimer = setInterval(() => {
+    const el = document.getElementById('demoLoadingLabel');
+    if (!el) return;
+    demoLabelIndex = (demoLabelIndex + 1) % ANALYZE_STATUS_MESSAGES.length;
+    el.textContent = ANALYZE_STATUS_MESSAGES[demoLabelIndex];
+  }, 8000);
   
   try {
-    const response = await fetch('https://adanalyzer-api.bamzonline01.workers.dev/api/analyze', {
+    const response = await fetchWithTimeout(ANALYZE_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adCopy: demoText })
@@ -107,8 +160,16 @@ analyzeDemoBtn.addEventListener('click', async () => {
     
   } catch (error) {
     console.error('Demo analysis error:', error);
-    showError(error.message || 'Failed to analyze demo ad. Please try again.');
+    const msg =
+      error.name === 'AbortError'
+        ? 'Analysis took too long (over 2 minutes). Check your connection and try again.'
+        : error.message || 'Failed to analyze demo ad. Please try again.';
+    showError(msg);
   } finally {
+    if (demoStatusTimer) {
+      clearInterval(demoStatusTimer);
+      demoStatusTimer = null;
+    }
     analyzeDemoBtn.disabled = false;
     analyzeDemoBtn.innerHTML = '<span class="btn-icon">🔍</span> <span>Analyze This Ad</span>';
   }
@@ -121,7 +182,7 @@ form.addEventListener('submit', async (e) => {
   // Check rate limit
   const { remaining } = checkDailyLimit();
   if (remaining === 0) {
-    showError('Daily limit reached (5 analyses). Try again tomorrow or contact us at 09067285890 for unlimited access.');
+    showError('Daily limit reached (5 analyses). Try again tomorrow or email Bamzonline01@gmail.com for unlimited access.');
     return;
   }
   
@@ -135,11 +196,12 @@ form.addEventListener('submit', async (e) => {
   
   // Show loading
   setLoading(true);
+  startAnalyzeStatusRotation();
   hideError();
   results.style.display = 'none';
   
   try {
-    const response = await fetch('https://adanalyzer-api.bamzonline01.workers.dev/api/analyze', {
+    const response = await fetchWithTimeout(ANALYZE_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adCopy, creative })
@@ -166,7 +228,11 @@ form.addEventListener('submit', async (e) => {
     
   } catch (error) {
     console.error('Analysis error:', error);
-    showError(error.message || 'Failed to analyze ad. Please try again.');
+    const msg =
+      error.name === 'AbortError'
+        ? 'Analysis took too long (over 2 minutes). Check your connection and try again.'
+        : error.message || 'Failed to analyze ad. Please try again.';
+    showError(msg);
   } finally {
     setLoading(false);
   }
@@ -176,6 +242,7 @@ function setLoading(loading) {
   analyzeBtn.disabled = loading;
   btnText.style.display = loading ? 'none' : 'inline';
   btnLoading.style.display = loading ? 'flex' : 'none';
+  if (!loading) stopAnalyzeStatusRotation();
 }
 
 function showError(message) {
@@ -195,21 +262,194 @@ function displayResults(analysis) {
   results.style.display = 'block';
 }
 
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function applyBeforeAfterLabels(t) {
+  return String(t)
+    .replace(/\*\*Before:\*\*/gi, '<strong class="analysis-before-label">Before:</strong>')
+    .replace(/\*\*After:\*\*/gi, '<strong class="analysis-after-label">After:</strong>')
+    .replace(/\*Before:\*/gi, '<strong class="analysis-before-label">Before:</strong>')
+    .replace(/\*After:\*/gi, '<strong class="analysis-after-label">After:</strong>')
+    .replace(/\bBefore:\s*/g, '<strong class="analysis-before-label">Before:</strong> ')
+    .replace(/\bAfter:\s*/g, '<strong class="analysis-after-label">After:</strong> ');
+}
+
+function processInline(s) {
+  const parts = String(s).split(/(\*\*[^*]+\*\*)/g);
+  return parts
+    .map((p) => {
+      if (/^\*\*[^*]+\*\*$/.test(p)) {
+        const inner = p.slice(2, -2);
+        if (/^Before:\s*$/i.test(inner.trim())) {
+          return '<strong class="analysis-before-label">Before:</strong>';
+        }
+        if (/^After:\s*$/i.test(inner.trim())) {
+          return '<strong class="analysis-after-label">After:</strong>';
+        }
+        return `<span class="analysis-label">${escapeHtml(inner)}</span>`;
+      }
+      let t = escapeHtml(p);
+      t = applyBeforeAfterLabels(t);
+      t = t.replace(/(\d+\/10)/g, '<strong class="score-highlight">$1</strong>');
+      t = t.replace(/(\d+\/100)/g, '<strong class="score-highlight">$1</strong>');
+      t = t.replace(/(\d+\/8)/g, '<strong class="score-highlight">$1</strong>');
+      t = t.replace(/\b(HIGH|MEDIUM|LOW)\b/g, '<span class="rating rating-$1">$1</span>');
+      t = t.replace(/\b(PASS|WARNING|FAIL)\b/g, '<span class="rating-policy rating-policy-$1">$1</span>');
+      return t;
+    })
+    .join('');
+}
+
+function getSectionHeadingClass(title) {
+  const t = title.toUpperCase();
+  if (/FINAL RECOMMENDATIONS/.test(t)) return 'analysis-section-title analysis-section-title--final';
+  if (/^VERDICT\s*$/i.test(title.trim())) return 'analysis-section-title analysis-section-title--verdict';
+  if (/^CREATIVE FEEDBACK\s*$/i.test(title.trim())) return 'analysis-section-title analysis-section-title--creative';
+  const lead = title.match(/^(\d+)\./);
+  const n = lead ? parseInt(lead[1], 10) : 0;
+  const mod = n > 0 ? ((n - 1) % 10) + 1 : 1;
+  return `analysis-section-title analysis-section-title--${mod}`;
+}
+
+function formatSectionHeading(title, sectionIndex) {
+  const cls = getSectionHeadingClass(title);
+  const hasLeadingNum = /^\d+\.\s/.test(title.trim());
+  const numHtml = hasLeadingNum
+    ? ''
+    : `<span class="analysis-section-num" aria-hidden="true">${sectionIndex}</span>`;
+  return `<h3 class="${cls}">${numHtml}<span class="analysis-section-heading-text">${escapeHtml(title)}</span></h3>`;
+}
+
+function isNumberedSectionHeading(trimmed) {
+  const m = trimmed.match(/^(\d+)\.\s+(.+)$/);
+  if (!m) return false;
+  const rest = m[2];
+  if (/\?/.test(rest)) return false;
+  if (/^(First|No |Only |Hook |Product |Natural |CTA |Reads)\b/i.test(rest)) return false;
+  return /^(HOOK|CPM|NIGERIAN|POLICY|AUDIENCE|ENGAGEMENT|PRE-PUBLISH|CREATIVE)/i.test(rest);
+}
+
+function parseSectionTitle(line) {
+  let t = line.replace(/^##\s+/, '').trim();
+  const boldOnly = t.match(/^\*\*([^*]+)\*\*$/);
+  if (boldOnly) t = boldOnly[1].trim();
+  if (/^##/.test(line) && t) return t;
+  if (/^VERDICT\s*$/i.test(t)) return 'VERDICT';
+  if (/^FINAL RECOMMENDATIONS/i.test(t)) return t;
+  if (/^CREATIVE FEEDBACK\s*$/i.test(t)) return 'CREATIVE FEEDBACK';
+  if (/^IF CREATIVE DESCRIPTION PROVIDED:?$/i.test(t)) return t;
+  if (isNumberedSectionHeading(t)) return t;
+  return null;
+}
+
 function formatAnalysis(text) {
-  // Format analysis text
-  let formatted = text
-    .replace(/\n\n/g, '</p><p>')
-    .replace(/\n/g, '<br>');
-  
-  formatted = `<div class="analysis-text"><p>${formatted}</p></div>`;
-  
-  // Highlight scores
-  formatted = formatted.replace(/(\d+\/10)/g, '<strong class="score-highlight">$1</strong>');
-  
-  // Highlight ratings
-  formatted = formatted.replace(/\b(HIGH|MEDIUM|LOW)\b/g, '<span class="rating rating-$1">$1</span>');
-  
-  return formatted;
+  let raw = String(text || '');
+  raw = raw.replace(/^\s*#{1,2}\s*Ad Copy Analysis\s*$/gm, '');
+  raw = raw.replace(/^\s*#\s*Ad Copy Analysis\s*\n?/i, '');
+  raw = raw.trim();
+  const lines = raw.split(/\r?\n/);
+  const blocks = [];
+  let para = [];
+  let sectionIndex = 0;
+
+  function flushPara() {
+    if (!para.length) return;
+    blocks.push(`<p class="analysis-p">${para.join('<br>')}</p>`);
+    para = [];
+  }
+
+  function flushList(items, ordered) {
+    if (!items.length) return;
+    const tag = ordered ? 'ol' : 'ul';
+    const cls = ordered ? 'analysis-ol' : 'analysis-ul';
+    const lis = items.map((row) => `<li>${processInline(row)}</li>`).join('');
+    blocks.push(`<${tag} class="${cls}">${lis}</${tag}>`);
+  }
+
+  let listBuf = [];
+  let listOrdered = true;
+
+  function flushListIfAny() {
+    if (listBuf.length) {
+      flushPara();
+      flushList(listBuf, listOrdered);
+      listBuf = [];
+    }
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (trimmed === '---') {
+      flushListIfAny();
+      flushPara();
+      blocks.push('<hr class="analysis-rule" />');
+      continue;
+    }
+
+    const normalizedHeading = trimmed
+      .replace(/^\*\*([^*]+)\*\*$/g, '$1')
+      .trim();
+    const title = parseSectionTitle(normalizedHeading);
+    if (title) {
+      flushListIfAny();
+      flushPara();
+      sectionIndex += 1;
+      blocks.push(formatSectionHeading(title, sectionIndex));
+      continue;
+    }
+
+    if (/^>\s?/.test(trimmed)) {
+      flushListIfAny();
+      flushPara();
+      const q = trimmed.replace(/^>\s?/, '');
+      blocks.push(`<blockquote class="analysis-quote">${processInline(q)}</blockquote>`);
+      continue;
+    }
+
+    const olMatch = trimmed.match(/^(\d+)\.\s+(.+)$/);
+    if (olMatch && !isNumberedSectionHeading(trimmed)) {
+      flushPara();
+      if (listOrdered === false && listBuf.length) {
+        flushList(listBuf, false);
+        listBuf = [];
+      }
+      listOrdered = true;
+      listBuf.push(olMatch[2]);
+      continue;
+    }
+
+    if (/^[-•]\s+/.test(trimmed)) {
+      flushPara();
+      if (listOrdered && listBuf.length) {
+        flushList(listBuf, true);
+        listBuf = [];
+      }
+      listOrdered = false;
+      listBuf.push(trimmed.replace(/^[-•]\s+/, ''));
+      continue;
+    }
+
+    if (!trimmed) {
+      flushPara();
+      continue;
+    }
+
+    flushListIfAny();
+    para.push(processInline(line));
+  }
+
+  flushListIfAny();
+  flushPara();
+
+  return `<div class="analysis-text">${blocks.join('')}</div>`;
 }
 
 // Share button - native share or Twitter
@@ -218,10 +458,9 @@ shareBtn.addEventListener('click', async () => {
   
   const shareData = {
     title: 'AdAnalyzer - Nigerian Ad Copy Analyzer',
-    text: 'I just used AdAnalyzer to check my ad copy before spending. Free tool for Nigerian advertisers built by @pdigitalhq',
-    url: window.location.origin
+    text: DEFAULT_SHARE_MESSAGE,
   };
-  
+
   if (navigator.share) {
     try {
       await navigator.share(shareData);
@@ -232,32 +471,24 @@ shareBtn.addEventListener('click', async () => {
       }
     }
   } else {
-    const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareData.text)}&url=${encodeURIComponent(shareData.url)}`;
+    const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(DEFAULT_SHARE_MESSAGE)}`;
     window.open(twitterUrl, '_blank', 'width=550,height=420');
     trackEvent('share_completed');
   }
 });
 
-// WhatsApp share
-whatsappBtn.addEventListener('click', () => {
-  trackEvent('whatsapp_share_clicked');
-  
-  const text = `I just used AdAnalyzer to check my Facebook ad before spending.
-
-It caught CPM killers that would have cost me N50,000+.
-
-Free tool built for Nigerian businesses: ${window.location.origin}`;
-  
-  const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
-  window.open(whatsappUrl, '_blank');
-  
-  trackEvent('whatsapp_share_completed');
+// Email — mailto creator with default share message
+emailShareBtn.addEventListener('click', () => {
+  trackEvent('email_share_clicked');
+  const mailto = `mailto:Bamzonline01@gmail.com?subject=${encodeURIComponent('AdAnalyzer — free Nigerian ad copy checker')}&body=${encodeURIComponent(DEFAULT_SHARE_MESSAGE)}`;
+  window.location.href = mailto;
+  trackEvent('email_share_completed');
 });
 
 // Copy link
 copyLinkBtn.addEventListener('click', async () => {
   try {
-    await navigator.clipboard.writeText(window.location.origin);
+    await navigator.clipboard.writeText(SITE_SHARE_URL);
     
     const originalHTML = copyLinkBtn.innerHTML;
     copyLinkBtn.innerHTML = `
