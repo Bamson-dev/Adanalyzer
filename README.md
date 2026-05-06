@@ -46,6 +46,6 @@ Deploy `worker.js` to Cloudflare Workers and configure:
 - `ADMIN_PASSWORD`
 - `ANALYTICS` (KV binding, if analytics is enabled)
 
-## Builder
+## Ownership
 
-Built by **Bamidele Matthew**.
+AdAnalyzer is solely provided and created by **Bamidele Matthew**.
